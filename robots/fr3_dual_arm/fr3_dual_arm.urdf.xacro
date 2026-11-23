@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  双臂 FR3 组合模型 / fr3_dual_arm
+  课程作业：franka_description_edu_proj（Kira）
+
+  设计原则（对应作业要求 2、3）：
+  * 零改动：仓库里任何原有 URDF / xacro / launch 文件都不修改；
+    本文件 + 一个 launch + 一个 rviz 配置是本作业唯一新增内容。
+  * 纯 xacro 组合：直接复用官方已有的 franka_robot 宏，用自定义 arm 宏
+    把它参数化（前缀 / 安装位姿）后实例化两次，
+    而不是先把单臂展开成一份完整 URDF 再手工改。
+  * 两条臂各自有独立的 link / joint 命名空间（left_ / right_），互不冲突。
+  * 只 include 一次官方宏文件，避免重复定义。
+
+  与官方 fr3.urdf.xacro 的差异：仅多传 arm_prefix / connected_to 两个参数，
+  这两个参数官方宏本身已支持，因此无需改动官方任何文件。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="fr3_dual_arm">
+
+  <!-- ============ 可调参数（与官方单臂 xacro 保持同名同默认值） ============ -->
+  <xacro:arg name="no_prefix" default="false"/>
+  <xacro:arg name="hand" default="true"/>
+  <xacro:arg name="ee_id" default="franka_hand"/>
+  <xacro:arg name="special_connection" default=""/>
+  <xacro:arg name="xyz_ee" default="0 0 0"/>
+  <xacro:arg name="rpy_ee" default="0 0 ${-pi/4}"/>
+  <xacro:arg name="tcp_xyz" default=""/>
+  <xacro:arg name="tcp_rpy" default="0 0 0"/>
+  <xacro:arg name="safety_distance" default="0.03"/>
+  <xacro:arg name="with_sc" default="false"/>
+  <xacro:arg name="include_self_collision_geometry" default="true"/>
+  <xacro:arg name="description_pkg" default="franka_description"/>
+  <!-- 两条臂基座相对中心面 y 方向的半间距 -->
+  <xacro:arg name="arm_offset_y" default="0.04"/>
+
+  <!-- 只 include 一次官方单臂宏（原仓库文件不改动） -->
+  <xacro:include filename="$(find franka_description)/robots/common/franka_robot.xacro"/>
+
+  <!-- ============ 世界根 link：两条臂共同挂在这上面 ============ -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.0"/>
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.12 0.04"/>
+      </geometry>
+      <material name="">
+        <color rgba="0.7 0.7 0.7 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.12 0.04"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!--
+    ============ 一条臂的封装 ============
+    只把「前缀」和「安装位姿」抽成参数，其余参数与官方 franka_robot 宏
+    同名同值传递，保证与官方单臂模型行为一致。
+
+    connected_to 会让官方宏自动创建 link "socket" 以及
+    socket -> ${prefix}fr3_link0 的 fixed joint；
+    随后我们再用一个 fixed joint 把 socket 挂到公共 base_link 上。
+  -->
+  <xacro:macro name="arm" params="prefix socket y rpy">
+
+    <xacro:franka_robot
+        robot_type="fr3"
+        arm_prefix="${prefix}"
+        connected_to="${socket}"
+        no_prefix="$(arg no_prefix)"
+        hand="$(arg hand)"
+        ee_id="$(arg ee_id)"
+        special_connection="$(arg special_connection)"
+        xyz_ee="$(arg xyz_ee)"
+        rpy_ee="$(arg rpy_ee)"
+        tcp_xyz="$(arg tcp_xyz)"
+        tcp_rpy="$(arg tcp_rpy)"
+        safety_distance="$(arg safety_distance)"
+        with_sc="$(arg with_sc)"
+        include_self_collision_geometry="$(arg include_self_collision_geometry)"
+        description_pkg="$(arg description_pkg)">
+    </xacro:franka_robot>
+
+    <!-- base_link -> 该臂的基座 link -->
+    <joint name="${prefix}base_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${socket}"/>
+      <!-- rpy 顺序：绕 x(roll) -> y(pitch) -> z(yaw)；两臂相向安装 -->
+      <origin xyz="0 ${y} 0" rpy="${rpy}"/>
+    </joint>
+
+  </xacro:macro>
+
+  <!-- 左臂 -->
+  <xacro:arm prefix="left_"
+             socket="left_base_link"
+             y="$(arg arm_offset_y)"
+             rpy="-1.5708 1.5708 0"/>
+
+  <!-- 右臂（镜像） -->
+  <xacro:arm prefix="right_"
+             socket="right_base_link"
+             y="-$(arg arm_offset_y)"
+             rpy="1.5708 1.5708 0"/>
+
+</robot>
